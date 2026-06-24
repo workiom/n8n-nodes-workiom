@@ -1,0 +1,17 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_CUSTOM_EXTENSIONS=/custom-extensions
+      - GENERIC_TIMEZONE=Asia/Dubai
+      - N8N_LOG_LEVEL=info
+    volumes:
+      - n8n_data:/home/node/.n8n
+      # Mount the built package so n8n picks it up as a custom extension
+      - .:/custom-extensions/n8n-nodes-workiom:ro
+
+volumes:
+  n8n_data:
