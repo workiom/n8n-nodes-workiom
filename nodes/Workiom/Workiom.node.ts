@@ -1,9 +1,12 @@
 import {
 	FieldType,
+	ICredentialTestFunctions,
+	ICredentialsDecrypted,
 	IDataObject,
 	IExecuteFunctions,
 	IHttpRequestMethods,
 	ILoadOptionsFunctions,
+	INodeCredentialTestResult,
 	INodeExecutionData,
 	INodeListSearchResult,
 	INodePropertyOptions,
@@ -58,7 +61,7 @@ export class Workiom implements INodeType {
 		defaults: { name: 'Workiom' },
 		inputs: ['main'],
 		outputs: ['main'],
-		credentials: [{ name: 'workiomApi', required: true }],
+		credentials: [{ name: 'workiomApi', required: true, testedBy: 'testWorkiomCredentials' }],
 		properties: [
 			// ── Resource ──────────────────────────────────────────────────────────
 			{
@@ -234,11 +237,140 @@ export class Workiom implements INodeType {
 				default: 0,
 				description: 'Number of records to skip (for pagination)',
 			},
+
+			// ── Record: getAll — search & filters ─────────────────────────────────
+			{
+				displayName: 'Quick Search',
+				name: 'quickSearch',
+				type: 'string',
+				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
+				default: '',
+				description: 'Search text across all fields',
+				placeholder: 'e.g. Logistics',
+			},
+			{
+				displayName: 'Filter Logic',
+				name: 'filterCollectionOperator',
+				type: 'options',
+				options: [
+					{ name: 'AND — all filters must match', value: 0 },
+					{ name: 'OR — any filter can match', value: 1 },
+				],
+				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
+				default: 0,
+			},
+			{
+				displayName: 'Filters',
+				name: 'filters',
+				type: 'fixedCollection',
+				typeOptions: { multipleValues: true },
+				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
+				default: {},
+				description: 'Filter records by field value',
+				options: [
+					{
+						name: 'filter',
+						displayName: 'Filter',
+						values: [
+							{
+								displayName: 'Field',
+								name: 'fieldId',
+								type: 'options',
+								typeOptions: {
+									loadOptionsMethod: 'getListFieldIds',
+									loadOptionsDependsOn: ['listId'],
+								},
+								default: '',
+								description: 'Field to filter by',
+							},
+							{
+								displayName: 'Operator',
+								name: 'operator',
+								type: 'options',
+								options: [
+									{ name: 'Is', value: 3 },
+									{ name: 'Is Not', value: 4 },
+									{ name: 'Contains', value: 1 },
+									{ name: 'Does Not Contain', value: 2 },
+									{ name: 'Greater Than', value: 5 },
+									{ name: 'Greater Than or Equal', value: 9 },
+									{ name: 'Less Than', value: 6 },
+									{ name: 'Less Than or Equal', value: 10 },
+									{ name: 'Is Empty', value: 7 },
+									{ name: 'Is Not Empty', value: 8 },
+								],
+								default: 3,
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'resourceLocator',
+								default: { mode: 'id', value: '' },
+								displayOptions: { hide: { operator: [7, 8] } },
+								modes: [
+									{
+										displayName: 'Enter Value',
+										name: 'id',
+										type: 'string',
+										placeholder: 'e.g. "Active", 42, true, 2024-01-01',
+									},
+									{
+										displayName: 'Choose from List',
+										name: 'list',
+										type: 'list',
+										typeOptions: {
+											searchListMethod: 'getFilterValueOptions',
+											searchable: true,
+										},
+									},
+								],
+							},
+						],
+					},
+				],
+			},
 		],
 	};
 
 	methods = {
 		listSearch: {
+			async getFilterValueOptions(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
+				const { baseUrl, token } = await getCredentials(this);
+				const listId = this.getCurrentNodeParameter('listId', { extractValue: true }) as string;
+				if (!listId) return { results: [] };
+
+				// '&fieldId' resolves the sibling Field in the SAME fixedCollection row:
+				// n8n rebuilds the path from the resource locator's own path
+				// (parameters.filters.filter[N].value → filters.filter[N].fieldId).
+				const rawId = this.getCurrentNodeParameter('&fieldId') ?? this.getCurrentNodeParameter('fieldId');
+				const fieldId = rawId != null && rawId !== '' ? Number(rawId) : NaN;
+				if (isNaN(fieldId)) return { results: [] };
+
+				const allFields = await fetchListFields(this, baseUrl, token, listId);
+				const field = allFields.find((f) => Number(f.id) === fieldId);
+				if (!field) return { results: [] };
+
+				const matches = (s: string) => !filter || s.toLowerCase().includes(filter.toLowerCase());
+				const dt = field.dataType as number;
+
+				if (dt === FT.User || dt === FT.MultiUser) {
+					const users = await fetchUserOptions(this, baseUrl, token);
+					return { results: users.filter((u) => matches(u.name as string)).map((u) => ({ name: u.name as string, value: String(u.value) })) };
+				}
+
+				if (dt === FT.StaticSelect || dt === FT.Status || dt === FT.MultiStaticSelect) {
+					const choices = (field.staticListValues ?? []) as Array<{ id: string; label: string }>;
+					return { results: choices.filter((c) => matches(c.label)).map((c) => ({ name: c.label, value: c.id })) };
+				}
+
+				if (dt === FT.LinkList && field.linkedListId) {
+					const links = await fetchLinkOptions(this, baseUrl, token, field.linkedListId as string);
+					return { results: links.filter((l) => matches(l.name as string)).map((l) => ({ name: l.name as string, value: String(l.value) })) };
+				}
+
+				return { results: [] };
+			},
+
 			async searchApps(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
 				const { baseUrl, token } = await getCredentials(this);
 				const response = await this.helpers.httpRequest({
@@ -270,6 +402,63 @@ export class Workiom implements INodeType {
 					.filter((l) => !filter || (l.name as string).toLowerCase().includes(filter.toLowerCase()))
 					.map((l) => ({ name: l.name as string, value: l.id as string }));
 				return { results };
+			},
+		},
+
+		credentialTest: {
+			async testWorkiomCredentials(
+				this: ICredentialTestFunctions,
+				credential: ICredentialsDecrypted,
+			): Promise<INodeCredentialTestResult> {
+				const data = credential.data as { accessToken?: string; baseUrl?: string };
+				const token = data?.accessToken;
+				const baseUrl = (data?.baseUrl || 'https://api.workiom.com').replace(/\/$/, '');
+
+				if (!token) {
+					return { status: 'Error', message: 'Access Token is required' };
+				}
+
+				try {
+					const response = await this.helpers.request({
+						method: 'GET',
+						url: `${baseUrl}/api/services/app/Session/GetCurrentLoginInformations`,
+						headers: { 'X-Api-Key': token },
+						json: true,
+					});
+
+					const result = (response as IDataObject)?.result as IDataObject;
+					const tenant = result?.tenant as IDataObject;
+					const user = result?.user as IDataObject;
+
+					if (!tenant) {
+						return { status: 'Error', message: 'Invalid API key — could not retrieve account info' };
+					}
+
+					const tenantName = (tenant.name as string) || (tenant.tenancyName as string) || 'Unknown';
+					const fullName = `${user?.name ?? ''} ${user?.surname ?? ''}`.trim()
+						|| (user?.emailAddress as string)
+						|| '';
+
+					return {
+						status: 'OK',
+						message: `Connected to ${tenantName}${fullName ? ` as ${fullName}` : ''}`,
+					};
+				} catch (error) {
+					return { status: 'Error', message: (error as Error).message };
+				}
+			},
+		},
+
+		loadOptions: {
+			async getListFieldIds(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				const { baseUrl, token } = await getCredentials(this);
+				const listId = this.getCurrentNodeParameter('listId', { extractValue: true }) as string;
+				if (!listId) return [];
+				const fields = await fetchListFields(this, baseUrl, token, listId);
+				return fields
+					.filter((f) => !f.isDeleted && f.isVisible)
+					.sort((a, b) => (a.order as number) - (b.order as number))
+					.map((f) => ({ name: f.name as string, value: f.id as number }));
 			},
 		},
 
@@ -328,7 +517,30 @@ export class Workiom implements INodeType {
 					if (operation === 'getAll') {
 						const limit = this.getNodeParameter('limit', i) as number;
 						const skipCount = this.getNodeParameter('skipCount', i) as number;
-						const raw = await workiomRequest(this, token, baseUrl, 'POST', '/api/services/app/Data/All', { listId, maxResultCount: limit, skipCount });
+						const quickSearch = (this.getNodeParameter('quickSearch', i, '') as string).trim();
+						const filterOp = this.getNodeParameter('filterCollectionOperator', i, 0) as number;
+						const filterEntries = (this.getNodeParameter('filters.filter', i, []) as Array<{
+							fieldId: number;
+							operator: number;
+							value: { mode: string; value: string } | string;
+						}>);
+
+						const filter = filterEntries.map((entry) => {
+							const { fieldId, operator } = entry;
+							const noValue = operator === 7 || operator === 8;
+							const raw = entry.value;
+							const value = noValue ? null : (typeof raw === 'string' ? raw : raw?.value ?? null);
+							return { fieldId, operator, value, value2: null, valueMappingType: 0 };
+						});
+
+						const body: IDataObject = {
+							listId,
+							maxResultCount: limit,
+							skipCount,
+							...(quickSearch ? { quickSearch } : {}),
+							...(filter.length > 0 ? { filter, filterCollectionOperator: filterOp } : {}),
+						};
+						const raw = await workiomRequest(this, token, baseUrl, 'POST', '/api/services/app/Data/All', body);
 						result = unwrap(raw, true);
 					} else if (operation === 'get') {
 						const id = this.getNodeParameter('recordId', i) as string;
@@ -451,6 +663,7 @@ async function getRecordFields(context: ILoadOptionsFunctions, mode: 'create' | 
 		}),
 	};
 }
+
 
 function resolveFieldType(
 	field: IDataObject,

@@ -1,10 +1,20 @@
-import { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
+import { Icon, ICredentialTestRequest, ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class WorkiomApi implements ICredentialType {
 	name = 'workiomApi';
 	displayName = 'Workiom API';
 	icon: Icon = 'file:workiom.svg';
 	documentationUrl = 'https://workiom.com';
+
+	test: ICredentialTestRequest = {
+		request: {
+			url: '={{($credentials.baseUrl || "https://api.workiom.com").replace(/\\/$/, "") + "/api/services/app/Session/GetCurrentLoginInformations"}}',
+			headers: {
+				'X-Api-Key': '={{$credentials.accessToken}}',
+			},
+		},
+	};
+
 	properties: INodeProperties[] = [
 		{
 			displayName: 'Access Token',
