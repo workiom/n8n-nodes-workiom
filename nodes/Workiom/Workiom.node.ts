@@ -305,17 +305,19 @@ export class Workiom implements INodeType {
 								displayName: 'Value',
 								name: 'value',
 								type: 'resourceLocator',
-								default: { mode: 'id', value: '' },
+								default: { mode: 'value', value: '' },
 								displayOptions: { hide: { operator: [7, 8] } },
 								modes: [
 									{
-										displayName: 'Enter Value',
-										name: 'id',
+										// Custom mode name (not the reserved 'id'/'url'/'list'),
+										// so n8n shows this displayName instead of a built-in label.
+										displayName: 'By Value',
+										name: 'value',
 										type: 'string',
 										placeholder: 'e.g. "Active", 42, true, 2024-01-01',
 									},
 									{
-										displayName: 'Choose from List',
+										displayName: 'From List',
 										name: 'list',
 										type: 'list',
 										typeOptions: {
@@ -525,11 +527,21 @@ export class Workiom implements INodeType {
 							value: { mode: string; value: string } | string;
 						}>);
 
+						// Look up each filter field's data type so "Enter Value" strings can be
+						// coerced to the right JSON type (number, boolean, …) the API expects.
+						let typeByFieldId: Record<number, number> = {};
+						if (filterEntries.length > 0) {
+							const fields = await fetchListFields(this, baseUrl, token, listId);
+							typeByFieldId = Object.fromEntries(
+								fields.map((f) => [Number(f.id), f.dataType as number]),
+							);
+						}
+
 						const filter = filterEntries.map((entry) => {
 							const { fieldId, operator } = entry;
 							const noValue = operator === 7 || operator === 8;
-							const raw = entry.value;
-							const value = noValue ? null : (typeof raw === 'string' ? raw : raw?.value ?? null);
+							const raw = typeof entry.value === 'string' ? entry.value : entry.value?.value ?? null;
+							const value = noValue ? null : coerceFilterValue(raw, typeByFieldId[Number(fieldId)]);
 							return { fieldId, operator, value, value2: null, valueMappingType: 0 };
 						});
 
@@ -708,7 +720,7 @@ function resolveFieldType(
 }
 
 async function fetchListFields(
-	context: ILoadOptionsFunctions,
+	context: ILoadOptionsFunctions | IExecuteFunctions,
 	baseUrl: string,
 	token: string,
 	listId: string,
@@ -790,6 +802,34 @@ function extractMapperBody(mapper: ResourceMapperValue): IDataObject {
 		if (value !== null && value !== undefined && value !== '') body[key] = value as IDataObject[string];
 	}
 	return body;
+}
+
+// Coerce a string filter value (from the "Enter Value" resource-locator mode)
+// into the JSON type the Workiom API expects for the field's data type.
+// Dropdown picks (User / Select / Linked) already carry the right id string.
+function coerceFilterValue(raw: unknown, dataType: number | undefined): unknown {
+	if (raw === null || raw === undefined || raw === '') return null;
+	if (typeof raw !== 'string') return raw;
+	const s = raw.trim();
+
+	switch (dataType) {
+		case FT.Number:
+		case FT.Count:
+		case FT.Currency:
+		case FT.ProgressBar: {
+			const n = Number(s);
+			return isNaN(n) ? s : n;
+		}
+		case FT.Boolean: {
+			const t = s.toLowerCase();
+			if (['true', '1', 'yes', 'y'].includes(t)) return true;
+			if (['false', '0', 'no', 'n'].includes(t)) return false;
+			return s;
+		}
+		default:
+			// Text, DateTime (ISO string), Select/User/Linked ids, etc. → as-is.
+			return s;
+	}
 }
 
 async function workiomRequest(
