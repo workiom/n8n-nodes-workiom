@@ -1,5 +1,5 @@
 {
-	"name": "n8n-nodes-workiom",
+	"name": "@workiom/n8n-nodes-workiom",
 	"version": "0.1.0",
 	"description": "n8n community node for the Workiom no-code platform",
 	"license": "MIT",
