@@ -571,8 +571,17 @@ export class Workiom implements INodeType {
 						result = unwrap(raw, false);
 					} else if (operation === 'delete') {
 						const id = this.getNodeParameter('recordId', i) as string;
-						await workiomRequest(this, token, baseUrl, 'DELETE', '/api/services/app/Data/Delete', undefined, { listId, id });
-						result = { success: true, id };
+						const raw = await workiomRequest(this, token, baseUrl, 'DELETE', '/api/services/app/Data/Delete', undefined, { listId, id });
+						const deleted = unwrap(raw, false);
+						result = deleted && typeof deleted === 'object' ? deleted : { success: true, id };
+					}
+
+					if (result != null) {
+						const fields = await fetchListFields(this, baseUrl, token, listId, true);
+						const idToName = buildFieldNameMap(fields);
+						result = Array.isArray(result)
+							? result.map((r) => renameRecordKeys(r as IDataObject, idToName))
+							: renameRecordKeys(result as IDataObject, idToName);
 					}
 				}
 
@@ -724,13 +733,14 @@ async function fetchListFields(
 	baseUrl: string,
 	token: string,
 	listId: string,
+	includeSystemFields = false,
 ): Promise<IDataObject[]> {
 	const response = await context.helpers.httpRequest({
 		method: 'GET',
 		url: `${baseUrl}/api/services/app/Lists/Get`,
 		headers: { 'X-Api-Key': token },
 		json: true,
-		qs: { id: listId, expand: 'fields' },
+		qs: { id: listId, expand: 'fields', ...(includeSystemFields ? { includeSystemFields: true } : {}) },
 	});
 	return ((response as IDataObject)?.result as IDataObject)?.fields as IDataObject[] ?? [];
 }
@@ -791,6 +801,49 @@ async function fetchLinkOptions(
 		// Target records unavailable → Linked List degrades to free-text record-id entry.
 		return [];
 	}
+}
+
+const SYSTEM_FIELD_NAMES: Record<number, string> = {
+	1: 'Creator',
+	2: 'Creation Date',
+	3: 'Last Updater',
+	4: 'Last Modify Date',
+	5: 'Last Activity Date',
+};
+
+function getFieldName(field: IDataObject): string {
+	const sft = field.systemFieldType as number;
+	if (sft && SYSTEM_FIELD_NAMES[sft]) return SYSTEM_FIELD_NAMES[sft];
+	return (field.name as string) ?? String(field.id);
+}
+
+// Map numeric field id → field name. On duplicate names, keep the id suffixed
+// so no field value is silently dropped.
+function buildFieldNameMap(fields: IDataObject[]): Record<string, string> {
+	const map: Record<string, string> = {};
+	const seen = new Set<string>();
+	for (const f of fields) {
+		const id = String(f.id);
+		let name = getFieldName(f);
+		if (seen.has(name)) name = `${name} (${id})`;
+		seen.add(name);
+		map[id] = name;
+	}
+	return map;
+}
+
+// Rewrite a record's keys from numeric field ids to field names.
+// `_id` is exposed as `id`; other unmapped keys (system metadata) pass through unchanged.
+function renameRecordKeys(record: IDataObject, idToName: Record<string, string>): IDataObject {
+	if (record == null || typeof record !== 'object') return record;
+	const out: IDataObject = {};
+	for (const [key, value] of Object.entries(record)) {
+		// Drop per-view ordering metadata (e.g. view-630460) — not record data.
+		if (key.startsWith('view-')) continue;
+		const mapped = key === '_id' ? 'id' : (idToName[key] ?? key);
+		out[mapped] = value;
+	}
+	return out;
 }
 
 function extractMapperBody(mapper: ResourceMapperValue): IDataObject {
