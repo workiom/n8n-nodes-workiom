@@ -153,16 +153,89 @@ export class WorkiomTrigger implements INodeType {
 			records = [body];
 		}
 
+		try {
+			const listId = this.getNodeParameter('listId', '', { extractValue: true }) as string;
+			if (listId) {
+				const { baseUrl, token } = await getCredentials(this);
+				const fields = await fetchListFields(this, baseUrl, token, listId, true);
+				const idToName = buildFieldNameMap(fields);
+				records = records.map((r) => renameRecordKeys(r, idToName));
+			}
+		} catch {
+			// Leave records untouched.
+		}
+
 		return {
 			workflowData: [records.map((r) => ({ json: r }))],
 		};
 	}
 }
 
-async function getCredentials(context: ILoadOptionsFunctions) {
+async function getCredentials(context: ILoadOptionsFunctions | IWebhookFunctions) {
 	const credentials = await context.getCredentials('workiomApi');
 	return {
 		baseUrl: ((credentials.baseUrl as string) || 'https://api.workiom.com').replace(/\/$/, ''),
 		token: credentials.accessToken as string,
 	};
+}
+
+// Workiom SystemFieldType enum → display name. The API marks system fields only
+// via a non-zero systemFieldType (no isSystemField flag).
+const SYSTEM_FIELD_NAMES: Record<number, string> = {
+	1: 'Creator',
+	2: 'Creation Date',
+	3: 'Last Updater',
+	4: 'Last Modify Date',
+	5: 'Last Activity Date',
+};
+
+function getFieldName(field: IDataObject): string {
+	const sft = field.systemFieldType as number;
+	if (sft && SYSTEM_FIELD_NAMES[sft]) return SYSTEM_FIELD_NAMES[sft];
+	return (field.name as string) ?? String(field.id);
+}
+
+// Map numeric field id → field name. On duplicate names, suffix the id so no
+// field value is silently dropped.
+function buildFieldNameMap(fields: IDataObject[]): Record<string, string> {
+	const map: Record<string, string> = {};
+	const seen = new Set<string>();
+	for (const f of fields) {
+		const id = String(f.id);
+		let name = getFieldName(f);
+		if (seen.has(name)) name = `${name} (${id})`;
+		seen.add(name);
+		map[id] = name;
+	}
+	return map;
+}
+
+// Rewrite a record's keys from numeric field ids to field names.
+// `_id` is exposed as `id`; per-view metadata is dropped; unmapped keys pass through.
+function renameRecordKeys(record: IDataObject, idToName: Record<string, string>): IDataObject {
+	if (record == null || typeof record !== 'object') return record;
+	const out: IDataObject = {};
+	for (const [key, value] of Object.entries(record)) {
+		if (key.startsWith('view-')) continue;
+		const mapped = key === '_id' ? 'id' : (idToName[key] ?? key);
+		out[mapped] = value;
+	}
+	return out;
+}
+
+async function fetchListFields(
+	context: IWebhookFunctions,
+	baseUrl: string,
+	token: string,
+	listId: string,
+	includeSystemFields = false,
+): Promise<IDataObject[]> {
+	const response = await context.helpers.httpRequest({
+		method: 'GET',
+		url: `${baseUrl}/api/services/app/Lists/Get`,
+		headers: { 'X-Api-Key': token },
+		json: true,
+		qs: { id: listId, expand: 'fields', ...(includeSystemFields ? { includeSystemFields: true } : {}) },
+	});
+	return ((response as IDataObject)?.result as IDataObject)?.fields as IDataObject[] ?? [];
 }
