@@ -238,6 +238,20 @@ export class Workiom implements INodeType {
 				description: 'Number of records to skip (for pagination)',
 			},
 
+			// ── Record: getAll — field projection ─────────────────────────────────
+			{
+				displayName: 'Fields to Return',
+				name: 'projectedFields',
+				type: 'multiOptions',
+				typeOptions: {
+					loadOptionsMethod: 'getListFieldIds',
+					loadOptionsDependsOn: ['listId'],
+				},
+				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
+				default: [],
+				description: 'Fields to include in each record. Leave empty to return all fields.',
+			},
+
 			// ── Record: getAll — search & filters ─────────────────────────────────
 			{
 				displayName: 'Quick Search',
@@ -594,6 +608,9 @@ export class Workiom implements INodeType {
 						const limit = this.getNodeParameter('limit', i) as number;
 						const skipCount = this.getNodeParameter('skipCount', i) as number;
 						const quickSearch = (this.getNodeParameter('quickSearch', i, '') as string).trim();
+						const projectedFields = (this.getNodeParameter('projectedFields', i, []) as Array<string | number>)
+							.map((id) => Number(id))
+							.filter((id) => !isNaN(id));
 						const filterOp = this.getNodeParameter('filterCollectionOperator', i, 0) as number;
 						const filterEntries = (this.getNodeParameter('filters.filter', i, []) as Array<{
 							fieldId: number;
@@ -624,6 +641,7 @@ export class Workiom implements INodeType {
 							maxResultCount: limit,
 							skipCount,
 							...(quickSearch ? { quickSearch } : {}),
+							...(projectedFields.length > 0 ? { projectedFields } : {}),
 							...(filter.length > 0 ? { filter, filterCollectionOperator: filterOp } : {}),
 						};
 						const raw = await workiomRequest(this, token, baseUrl, 'POST', '/api/services/app/Data/All', body);
