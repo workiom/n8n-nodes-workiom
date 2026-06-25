@@ -100,9 +100,8 @@ export class Workiom implements INodeType {
 				displayOptions: { show: { resource: ['list'] } },
 				options: [
 					{ name: 'Get', value: 'get', action: 'Get a list by ID' },
-					{ name: 'Get Many', value: 'getAll', action: 'Get all lists in an app' },
 				],
-				default: 'getAll',
+				default: 'get',
 			},
 
 			// ── Record operations ─────────────────────────────────────────────────
@@ -536,11 +535,7 @@ export class Workiom implements INodeType {
 
 				// ── List ──────────────────────────────────────────────────────────
 				} else if (resource === 'list') {
-					if (operation === 'getAll') {
-						const appId = this.getNodeParameter('appId', i, '', { extractValue: true }) as string;
-						const raw = await workiomRequest(this, token, baseUrl, 'GET', '/api/services/app/Lists/GetAll', undefined, { appId });
-						result = unwrap(raw, true);
-					} else if (operation === 'get') {
+					if (operation === 'get') {
 						const id = this.getNodeParameter('listId', i, '', { extractValue: true }) as string;
 						const raw = await workiomRequest(this, token, baseUrl, 'GET', '/api/services/app/Lists/Get', undefined, { id, expand: ['views', 'fields'], includeSystemFields: true });
 						result = unwrap(raw, false);
