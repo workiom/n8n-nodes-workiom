@@ -298,6 +298,8 @@ export class Workiom implements INodeType {
 									{ name: 'Less Than or Equal', value: 10 },
 									{ name: 'Is Empty', value: 7 },
 									{ name: 'Is Not Empty', value: 8 },
+									{ name: 'In', value: 12 },
+									{ name: 'Not In', value: 13 },
 								],
 								default: 3,
 							},
@@ -498,6 +500,24 @@ export class Workiom implements INodeType {
 						const id = this.getNodeParameter('appId', i, '', { extractValue: true }) as string;
 						const raw = await workiomRequest(this, token, baseUrl, 'GET', '/api/services/app/Apps/Get', undefined, { id });
 						result = unwrap(raw, false);
+						if (result && typeof result === 'object' && !Array.isArray(result)) {
+							// Drop empty folders array — noise in the output.
+							const folders = (result as IDataObject).folders;
+							if (Array.isArray(folders) && folders.length === 0) delete (result as IDataObject).folders;
+							// Apps/Get omits lists — fetch them separately and attach.
+							const listsRaw = await workiomRequest(this, token, baseUrl, 'GET', '/api/services/app/Lists/GetAll', undefined, { appId: id });
+							const lists = unwrap(listsRaw, true);
+							const stripKeys = ['isVisible', 'views', 'fields', 'visibility', 'roleIds', 'defaultView', 'lastSyncDate'];
+							const listTypeNames: Record<number, string> = { 0: 'Data', 1: 'Task', 2: 'Process' };
+							(result as IDataObject).lists = (Array.isArray(lists) ? lists : []).map((list) => {
+								if (list && typeof list === 'object') {
+									for (const key of stripKeys) delete (list as IDataObject)[key];
+									const lt = (list as IDataObject).listType;
+									if (typeof lt === 'number' && lt in listTypeNames) (list as IDataObject).listType = listTypeNames[lt];
+								}
+								return list;
+							}) as IDataObject[];
+						}
 					}
 
 				// ── List ──────────────────────────────────────────────────────────
@@ -508,8 +528,62 @@ export class Workiom implements INodeType {
 						result = unwrap(raw, true);
 					} else if (operation === 'get') {
 						const id = this.getNodeParameter('listId', i, '', { extractValue: true }) as string;
-						const raw = await workiomRequest(this, token, baseUrl, 'GET', '/api/services/app/Lists/Get', undefined, { id });
+						const raw = await workiomRequest(this, token, baseUrl, 'GET', '/api/services/app/Lists/Get', undefined, { id, expand: ['views', 'fields'], includeSystemFields: true });
 						result = unwrap(raw, false);
+						// Strip verbose/internal fields from the list output — keep views and fields.
+						if (result && typeof result === 'object' && !Array.isArray(result)) {
+							for (const key of ['isVisible', 'visibility', 'roleIds', 'defaultView', 'lastSyncDate']) {
+								delete (result as IDataObject)[key];
+							}
+							const viewTypeNames: Record<number, string> = {
+								0: 'DataGrid', 1: 'KanbanBoard', 2: 'Form', 3: 'Calendar', 4: 'Timeline',
+								5: 'ResourceAllocation', 6: 'Document', 7: 'Tree', 8: 'Map', 9: 'ListView',
+								10: 'Gallery', 11: 'OrganizationChart', 12: 'GanttChart',
+							};
+							const sortingTypeNames: Record<number, string> = { 0: 'None', 1: 'Ascending', 2: 'Descending' };
+							const views = (result as IDataObject).views;
+							if (Array.isArray(views)) {
+								for (const view of views) {
+									if (!view || typeof view !== 'object') continue;
+									const v = view as IDataObject;
+									for (const key of ['state', 'accessibility', 'roleIds', 'recordLayoutId', 'conditionalColorFilters']) {
+										delete v[key];
+									}
+									if (typeof v.viewType === 'number' && v.viewType in viewTypeNames) v.viewType = viewTypeNames[v.viewType];
+									if (typeof v.groupingSorting === 'number' && v.groupingSorting in sortingTypeNames) v.groupingSorting = sortingTypeNames[v.groupingSorting];
+									if (Array.isArray(v.filters)) {
+										for (const filter of v.filters) {
+											if (!filter || typeof filter !== 'object') continue;
+											delete (filter as IDataObject).order;
+										}
+									}
+								}
+							}
+							const fieldDataTypeNames: Record<number, string> = {
+								0: 'Text', 1: 'Number', 2: 'DateTime', 3: 'Boolean', 4: 'StaticSelect', 5: 'LinkList',
+								6: 'User', 7: 'Website', 8: 'Email', 9: 'File', 11: 'PhoneNumber', 12: 'Count',
+								13: 'Currency', 14: 'AutoNumber', 15: 'CheckList', 16: 'Status', 17: 'MultiStaticSelect',
+								18: 'MultiUser', 19: 'ProgressBar', 20: 'Location', 21: 'Dependency', 22: 'Signature',
+							};
+							const systemFieldTypeNames: Record<number, string> = {
+								0: 'None', 1: 'Creator', 2: 'CreationDate', 3: 'LastUpdater', 4: 'LastModifyDate', 5: 'LastActivityDate',
+							};
+							const dateTypeNames: Record<number, string> = { 0: 'Date', 1: 'DateTime', 2: 'DateTimeUTC' };
+							const fields = (result as IDataObject).fields;
+							if (Array.isArray(fields)) {
+								for (const field of fields) {
+									if (!field || typeof field !== 'object') continue;
+									const f = field as IDataObject;
+									delete f.order;
+									for (const key of ['staticListValues', 'filters', 'customFileExtensions']) {
+										if (Array.isArray(f[key]) && (f[key] as unknown[]).length === 0) delete f[key];
+									}
+									if (typeof f.dataType === 'number' && f.dataType in fieldDataTypeNames) f.dataType = fieldDataTypeNames[f.dataType];
+									if (typeof f.systemFieldType === 'number' && f.systemFieldType in systemFieldTypeNames) f.systemFieldType = systemFieldTypeNames[f.systemFieldType];
+									if (typeof f.dateType === 'number' && f.dateType in dateTypeNames) f.dateType = dateTypeNames[f.dateType];
+								}
+							}
+						}
 					}
 
 				// ── Record ────────────────────────────────────────────────────────
@@ -571,8 +645,17 @@ export class Workiom implements INodeType {
 						result = unwrap(raw, false);
 					} else if (operation === 'delete') {
 						const id = this.getNodeParameter('recordId', i) as string;
-						await workiomRequest(this, token, baseUrl, 'DELETE', '/api/services/app/Data/Delete', undefined, { listId, id });
-						result = { success: true, id };
+						const raw = await workiomRequest(this, token, baseUrl, 'DELETE', '/api/services/app/Data/Delete', undefined, { listId, id });
+						const deleted = unwrap(raw, false);
+						result = deleted && typeof deleted === 'object' ? deleted : { success: true, id };
+					}
+
+					if (result != null) {
+						const fields = await fetchListFields(this, baseUrl, token, listId, true);
+						const idToName = buildFieldNameMap(fields);
+						result = Array.isArray(result)
+							? result.map((r) => renameRecordKeys(r as IDataObject, idToName))
+							: renameRecordKeys(result as IDataObject, idToName);
 					}
 				}
 
@@ -724,13 +807,14 @@ async function fetchListFields(
 	baseUrl: string,
 	token: string,
 	listId: string,
+	includeSystemFields = false,
 ): Promise<IDataObject[]> {
 	const response = await context.helpers.httpRequest({
 		method: 'GET',
 		url: `${baseUrl}/api/services/app/Lists/Get`,
 		headers: { 'X-Api-Key': token },
 		json: true,
-		qs: { id: listId, expand: 'fields' },
+		qs: { id: listId, expand: 'fields', ...(includeSystemFields ? { includeSystemFields: true } : {}) },
 	});
 	return ((response as IDataObject)?.result as IDataObject)?.fields as IDataObject[] ?? [];
 }
@@ -791,6 +875,49 @@ async function fetchLinkOptions(
 		// Target records unavailable → Linked List degrades to free-text record-id entry.
 		return [];
 	}
+}
+
+const SYSTEM_FIELD_NAMES: Record<number, string> = {
+	1: 'Creator',
+	2: 'Creation Date',
+	3: 'Last Updater',
+	4: 'Last Modify Date',
+	5: 'Last Activity Date',
+};
+
+function getFieldName(field: IDataObject): string {
+	const sft = field.systemFieldType as number;
+	if (sft && SYSTEM_FIELD_NAMES[sft]) return SYSTEM_FIELD_NAMES[sft];
+	return (field.name as string) ?? String(field.id);
+}
+
+// Map numeric field id → field name. On duplicate names, keep the id suffixed
+// so no field value is silently dropped.
+function buildFieldNameMap(fields: IDataObject[]): Record<string, string> {
+	const map: Record<string, string> = {};
+	const seen = new Set<string>();
+	for (const f of fields) {
+		const id = String(f.id);
+		let name = getFieldName(f);
+		if (seen.has(name)) name = `${name} (${id})`;
+		seen.add(name);
+		map[id] = name;
+	}
+	return map;
+}
+
+// Rewrite a record's keys from numeric field ids to field names.
+// `_id` is exposed as `id`; other unmapped keys (system metadata) pass through unchanged.
+function renameRecordKeys(record: IDataObject, idToName: Record<string, string>): IDataObject {
+	if (record == null || typeof record !== 'object') return record;
+	const out: IDataObject = {};
+	for (const [key, value] of Object.entries(record)) {
+		// Drop per-view ordering metadata (e.g. view-630460) — not record data.
+		if (key.startsWith('view-')) continue;
+		const mapped = key === '_id' ? 'id' : (idToName[key] ?? key);
+		out[mapped] = value;
+	}
+	return out;
 }
 
 function extractMapperBody(mapper: ResourceMapperValue): IDataObject {
