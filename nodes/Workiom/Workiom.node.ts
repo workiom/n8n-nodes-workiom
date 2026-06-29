@@ -205,12 +205,12 @@ export class Workiom implements INodeType {
 				displayOptions: { show: { resource: ['record'], operation: ['update'] } },
 				default: { mappingMode: 'defineBelow', value: null },
 				typeOptions: {
-					loadOptionsDependsOn: ['listId'],
+					loadOptionsDependsOn: ['listId', 'recordId'],
 					resourceMapper: {
 						resourceMapperMethod: 'getFieldsForUpdate',
 						mode: 'add',
 						fieldWords: { singular: 'field', plural: 'fields' },
-						addAllFields: true,
+						addAllFields: false,
 						supportAutoMap: false,
 						noFieldsError: 'No editable fields found. Please select a list first.',
 					},
