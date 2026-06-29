@@ -1,120 +1,122 @@
 # n8n-nodes-workiom
 
-n8n community node for the [Workiom](https://workiom.com) no-code platform. It lets you read and write Workiom data (apps, lists, records) and trigger workflows when records are created or updated.
+This is an n8n community node. It lets you use **Workiom** in your n8n workflows.
 
-## Nodes
+[Workiom](https://workiom.com) is a no-code platform for building data-driven business applications — lists, forms, automations, and dashboards — without writing code.
 
-- **Workiom** (action) — App, List, and Record resources with full CRUD. Record Create/Update render a typed field form (date pickers, toggles, and dropdowns for Select/Status/User/Linked-List fields) loaded live from your list schema.
-- **Workiom Trigger** — webhook node that fires on **New Record** / **Updated Record**, driven by a Workiom Automation.
+[n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-## Authentication
-
-Create a **Workiom API** credential:
-
-- **Access Token** — your Workiom API key (sent as the `X-Api-Key` header).
-- **Base URL** — defaults to `https://api.workiom.com`; override only for staging/self-hosted.
-
----
-
-## Build
-
-```bash
-# from the project root
-npm install
-npm run build
-```
-
-This compiles TypeScript into `dist/`, which is what n8n loads. Re-run `npm run build` after any source change.
-
-For active development with hot reload:
-
-```bash
-npm run dev
-```
+[Installation](#installation)  
+[Operations](#operations)  
+[Credentials](#credentials)  
+[Compatibility](#compatibility)  
+[Usage](#usage)  
+[Resources](#resources)  
+[Version history](#version-history)  
 
 ---
 
-## Use as a custom node (without publishing to npm)
+## Installation
 
-n8n loads any package found under the directory named in `N8N_CUSTOM_EXTENSIONS`. This is the simplest way to run the node locally or on your own n8n instance — no npm publish or Community-Nodes install required.
+Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation.
 
-### Option A — Docker Compose (recommended for local)
-
-A ready-to-use `docker-compose.yml` is included. It mounts this built package into n8n as a custom extension:
-
-```yaml
-services:
-  n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
-    restart: unless-stopped
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_CUSTOM_EXTENSIONS=/custom-extensions
-      - GENERIC_TIMEZONE=Asia/Dubai
-    volumes:
-      - n8n_data:/home/node/.n8n
-      # Mount the built package so n8n picks it up as a custom extension
-      - .:/custom-extensions/n8n-nodes-workiom:ro
-
-volumes:
-  n8n_data:
-```
-
-Steps:
-
-```bash
-npm run build          # produce dist/
-docker compose up -d   # start n8n with the node mounted
-```
-
-Open <http://localhost:5678>, then search for **Workiom** when adding a node.
-
-After changing the code:
-
-```bash
-npm run build
-docker compose restart
-```
-
-> The mount maps the **whole package** (including `dist/`, `package.json`, and the `n8n` block) to `/custom-extensions/n8n-nodes-workiom`. n8n reads the `n8n.nodes` / `n8n.credentials` entries in `package.json` to find the compiled files.
-
-### Option B — existing n8n install (npm / self-hosted)
-
-On the machine running n8n, place the built package under the custom-extensions folder and point n8n at it:
-
-```bash
-# build the package
-npm run build
-
-# copy (or symlink) the whole package somewhere n8n can read
-mkdir -p ~/.n8n/custom
-cp -r . ~/.n8n/custom/n8n-nodes-workiom
-
-# tell n8n where to look, then start it
-export N8N_CUSTOM_EXTENSIONS=~/.n8n/custom
-n8n start
-```
-
-`~/.n8n/custom` is also scanned by default in many setups, but setting `N8N_CUSTOM_EXTENSIONS` explicitly is the reliable approach. Restart n8n after each rebuild.
+In short: **Settings → Community Nodes → Install** → search for `@workiom/n8n-nodes-workiom`.
 
 ---
 
-## Setting up the Trigger
+## Operations
 
-1. Add the **Workiom Trigger** node, pick the event (New / Updated Record), select the App and List, and activate the workflow to get the webhook URL.
-2. In Workiom, open the list → **Automations** → create an automation:
-   - **Trigger:** Record Created / Record Updated (matching the node)
-   - **Action:** Webhook → paste the n8n URL, method `POST`, type `JSON`
-   - **Body:** `{"record": "{{1. YourListName}}"}`
-3. Save and activate. New/updated records now fire the workflow.
+### Workiom (action node)
+
+| Resource | Operations |
+|---|---|
+| **App** | Get, Get Many |
+| **List** | Get |
+| **Record** | Create, Get, Get Many, Update, Delete |
+
+**Record: Get Many** supports pagination (limit / skip), field projection (return only the fields you need), full-text quick search, and field-level filters with 13 operators (Is, Contains, Greater Than, In, Is Empty, …).
+
+**Record: Create / Update** render a live typed field form — date pickers, toggles, and dropdowns for Select, Status, User, and Linked-List fields — loaded directly from your list schema. Update starts with an empty form; add only the fields you want to patch.
+
+### Workiom Trigger (webhook node)
+
+Fires when a record is **created** or **updated** in a Workiom list. Configure the matching Workiom Automation to call the webhook URL n8n provides.
 
 ---
 
-## Publishing to npm
+## Credentials
 
-See [PUBLISHING.md](PUBLISHING.md) for publishing the package so it can be installed through n8n's in-app Community Nodes feature.
+Create a **Workiom API** credential in n8n:
 
-## License
+| Field | Description |
+|---|---|
+| **Access Token** | Your Workiom API key — find it in Workiom under **Profile → API Keys**. Sent as the `X-Api-Key` header. |
+| **Base URL** | Leave as `https://api.workiom.com` unless you are on a self-hosted or staging instance. |
 
-[MIT](LICENSE.md)
+---
+
+## Compatibility
+
+Tested against **n8n 1.x** (1.30 and later). Requires `n8nNodesApiVersion: 1`.
+
+No known incompatibilities with earlier 1.x releases. Not tested against n8n 0.x.
+
+---
+
+## Usage
+
+### Setting up the Workiom Trigger
+
+1. Add the **Workiom Trigger** node to your workflow, choose **New Record** or **Updated Record**, and select the App and List.
+2. Activate the workflow — n8n gives you a webhook URL.
+3. In Workiom, open the list → **Automations** → create a new automation:
+   - **Trigger:** Record Created _or_ Record Updated (match what you chose in n8n)
+   - **Action:** Webhook → paste the n8n URL, method `POST`, body type `JSON`
+   - **Body:**
+     ```
+     {"record": "{{1. YourListName}}"}
+     ```
+4. Save and activate. Records now fire the workflow automatically.
+
+### Updating only specific fields
+
+The **Update Record** operation starts with an empty field form. Click **Add field** to select each field you want to change. Fields you leave out are not sent to the API — Workiom only overwrites what you include.
+
+### Field types and values
+
+| Field type | What to pass |
+|---|---|
+| Text, Email, Website, Phone | Plain string |
+| Number, Currency, Count, Progress | Numeric value |
+| DateTime | ISO 8601 string, e.g. `2024-06-01T09:00:00` |
+| Boolean | `true` / `false` |
+| Select, Status, Multi-Select | Option name or option ID — the node renders a dropdown |
+| User, Multi-User | Select from the dropdown (user ID is sent automatically) |
+| Linked List | Select from the dropdown (record ID is sent automatically) |
+
+---
+
+## Resources
+
+- [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
+- [Workiom documentation](https://help.workiom.com)
+- [Workiom API reference](https://api.workiom.com/swagger)
+
+---
+
+## Version history
+
+### 0.4.1
+- Update Record field form starts empty — add only the fields you want to patch.
+- Fields load as soon as the list is selected.
+- Removed build artefacts from the published package.
+
+### 0.4.0
+- Added field projection to Record "Get Many" — return only the fields you need.
+- Removed List "Get Many" (replaced by App "Get" which includes all lists).
+
+### 0.3.0
+- Human-readable field names in all record responses (field IDs are mapped to names).
+- Enriched App and List `get` output.
+- Added `In` / `Not In` filter operators.
+- Webhook trigger maps field IDs to names in the output payload.
