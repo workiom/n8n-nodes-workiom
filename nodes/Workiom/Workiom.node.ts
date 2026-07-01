@@ -251,6 +251,17 @@ export class Workiom implements INodeType {
 				description: 'Fields to include in each record. Leave empty to return all fields.',
 			},
 
+			// ── Record: getAll — restrict to specific record IDs ──────────────────
+			{
+				displayName: 'Record IDs',
+				name: 'ids',
+				type: 'string',
+				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
+				default: '',
+				description: 'Restrict results to these record IDs. Accepts an expression returning an array (e.g. from a previous step) or a comma-separated list. Leave empty to return all matching records.',
+				placeholder: 'e.g. {{ $json.ids }} or id1,id2,id3',
+			},
+
 			// ── Record: getAll — search & filters ─────────────────────────────────
 			{
 				displayName: 'Quick Search',
@@ -606,6 +617,7 @@ export class Workiom implements INodeType {
 						const projectedFields = (this.getNodeParameter('projectedFields', i, []) as Array<string | number>)
 							.map((id) => Number(id))
 							.filter((id) => !isNaN(id));
+						const ids = normalizeIds(this.getNodeParameter('ids', i, ''));
 						const filterOp = this.getNodeParameter('filterCollectionOperator', i, 0) as number;
 						const filterEntries = (this.getNodeParameter('filters.filter', i, []) as Array<{
 							fieldId: number;
@@ -637,6 +649,7 @@ export class Workiom implements INodeType {
 							skipCount,
 							...(quickSearch ? { quickSearch } : {}),
 							...(projectedFields.length > 0 ? { projectedFields } : {}),
+							...(ids.length > 0 ? { ids } : {}),
 							...(filter.length > 0 ? { filter, filterCollectionOperator: filterOp } : {}),
 						};
 						const raw = await workiomRequest(this, token, baseUrl, 'POST', '/api/services/app/Data/All', body);
@@ -690,6 +703,42 @@ export class Workiom implements INodeType {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Accepts the `ids` param in whatever shape n8n hands over: an expression that
+// resolves to an array (of ID strings OR whole record objects from a previous
+// step), a JSON-array string, or a comma-separated string. Returns clean IDs.
+function normalizeIds(raw: unknown): string[] {
+	const toId = (v: unknown): string => {
+		if (v == null) return '';
+		if (typeof v === 'object') {
+			const o = v as IDataObject;
+			return String(o.id ?? o._id ?? '').trim();
+		}
+		return String(v).trim();
+	};
+
+	let arr: unknown[];
+	if (Array.isArray(raw)) {
+		arr = raw;
+	} else if (typeof raw === 'string') {
+		const s = raw.trim();
+		if (s === '') return [];
+		if (s.startsWith('[')) {
+			try {
+				const parsed = JSON.parse(s);
+				arr = Array.isArray(parsed) ? parsed : [parsed];
+			} catch {
+				arr = s.split(',');
+			}
+		} else {
+			arr = s.split(',');
+		}
+	} else {
+		arr = [raw];
+	}
+
+	return arr.map(toId).filter((id) => id !== '');
+}
 
 async function getCredentials(context: ILoadOptionsFunctions) {
 	const credentials = await context.getCredentials('workiomApi');
