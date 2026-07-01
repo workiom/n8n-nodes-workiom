@@ -3,7 +3,7 @@ import { Icon, ICredentialTestRequest, ICredentialType, INodeProperties } from '
 export class WorkiomApi implements ICredentialType {
 	name = 'workiomApi';
 	displayName = 'Workiom API';
-	icon: Icon = 'file:workiom.svg';
+	icon: Icon = { light: 'file:workiom.svg', dark: 'file:workiom.dark.svg' };
 	documentationUrl = 'https://workiom.com';
 
 	test: ICredentialTestRequest = {

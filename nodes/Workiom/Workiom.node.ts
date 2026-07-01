@@ -12,6 +12,7 @@ import {
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
+	NodeConnectionTypes,
 	NodeOperationError,
 	ResourceMapperFields,
 	ResourceMapperValue,
@@ -53,14 +54,14 @@ export class Workiom implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Workiom',
 		name: 'workiom',
-		icon: 'file:workiom.svg',
+		icon: { light: 'file:workiom.svg', dark: 'file:workiom.dark.svg' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description: 'Read and write data in Workiom',
 		defaults: { name: 'Workiom' },
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'workiomApi', required: true, testedBy: 'testWorkiomCredentials' }],
 		properties: [
 			// ── Resource ──────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ export class Workiom implements INodeType {
 				displayOptions: { show: { resource: ['app'] } },
 				options: [
 					{ name: 'Get', value: 'get', action: 'Get an app by ID' },
-					{ name: 'Get Many', value: 'getAll', action: 'Get all apps' },
+					{ name: 'Get Many', value: 'getAll', action: 'Get many apps' },
 				],
 				default: 'getAll',
 			},
@@ -116,7 +117,7 @@ export class Workiom implements INodeType {
 					{ name: 'Delete', value: 'delete', action: 'Delete a record' },
 					{ name: 'Get', value: 'get', action: 'Get a record by ID' },
 					{ name: 'Get Many', value: 'getAll', action: 'Get many records' },
-					{ name: 'Update', value: 'update', action: 'Update a record (partial)' },
+					{ name: 'Update', value: 'update', action: 'Update a record partial' },
 				],
 				default: 'getAll',
 			},
@@ -225,7 +226,7 @@ export class Workiom implements INodeType {
 				typeOptions: { minValue: 1, maxValue: 10000 },
 				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
 				default: 50,
-				description: 'Max number of records to return (max 10 000)',
+				description: 'Max number of results to return',
 			},
 			{
 				displayName: 'Skip',
@@ -248,7 +249,7 @@ export class Workiom implements INodeType {
 				},
 				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
 				default: [],
-				description: 'Fields to include in each record. Leave empty to return all fields.',
+				description: 'Fields to include in each record. Leave empty to return all fields. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 
 			// ── Record: getAll — restrict to specific record IDs ──────────────────
@@ -259,7 +260,7 @@ export class Workiom implements INodeType {
 				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
 				default: '',
 				description: 'Restrict results to these record IDs. Accepts an expression returning an array (e.g. from a previous step) or a comma-separated list. Leave empty to return all matching records.',
-				placeholder: 'e.g. {{ $json.ids }} or id1,id2,id3',
+				placeholder: 'e.g. {{ $json.IDs }} or id1,id2,id3',
 			},
 
 			// ── Record: getAll — search & filters ─────────────────────────────────
@@ -277,8 +278,8 @@ export class Workiom implements INodeType {
 				name: 'filterCollectionOperator',
 				type: 'options',
 				options: [
-					{ name: 'AND — all filters must match', value: 0 },
-					{ name: 'OR — any filter can match', value: 1 },
+					{ name: 'AND — All Filters Must Match', value: 0 },
+					{ name: 'OR — Any Filter Can Match', value: 1 },
 				],
 				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
 				default: 0,
@@ -297,7 +298,7 @@ export class Workiom implements INodeType {
 						displayName: 'Filter',
 						values: [
 							{
-								displayName: 'Field',
+								displayName: 'Field Name or ID',
 								name: 'fieldId',
 								type: 'options',
 								typeOptions: {
@@ -305,7 +306,7 @@ export class Workiom implements INodeType {
 									loadOptionsDependsOn: ['listId'],
 								},
 								default: '',
-								description: 'Field to filter by',
+								description: 'Field to filter by. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 							},
 							{
 								displayName: 'Operator',
@@ -358,6 +359,7 @@ export class Workiom implements INodeType {
 				],
 			},
 		],
+		usableAsTool: true,
 	};
 
 	methods = {
@@ -447,12 +449,14 @@ export class Workiom implements INodeType {
 				}
 
 				try {
-					const response = await this.helpers.request({
-						method: 'GET',
-						url: `${baseUrl}/api/services/app/Session/GetCurrentLoginInformations`,
-						headers: { 'X-Api-Key': token },
-						json: true,
-					});
+					const res = await fetch(
+						`${baseUrl}/api/services/app/Session/GetCurrentLoginInformations`,
+						{ method: 'GET', headers: { 'X-Api-Key': token } },
+					);
+					if (!res.ok) {
+						return { status: 'Error', message: `Request failed with status ${res.status}` };
+					}
+					const response = await res.json();
 
 					const result = (response as IDataObject)?.result as IDataObject;
 					const tenant = result?.tenant as IDataObject;

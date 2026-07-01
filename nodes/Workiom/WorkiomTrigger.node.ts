@@ -5,6 +5,7 @@ import {
 	INodeType,
 	INodeTypeDescription,
 	IWebhookFunctions,
+	NodeConnectionTypes,
 	IWebhookResponseData,
 } from 'n8n-workflow';
 
@@ -40,17 +41,19 @@ const LIST_MODES = [
 	},
 ];
 
+// eslint-disable-next-line @n8n/community-nodes/webhook-lifecycle-complete -- Workiom has no API to register/verify/remove webhooks; users paste the URL into a Workiom Automation manually, same pattern as n8n's core Webhook trigger.
 export class WorkiomTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Workiom Trigger',
 		name: 'workiomTrigger',
-		icon: 'file:workiom.svg',
+		icon: { light: 'file:workiom.svg', dark: 'file:workiom.dark.svg' },
 		group: ['trigger'],
 		version: 1,
 		description: 'Triggers when a record is created or updated in Workiom',
+		subtitle: '={{$parameter["event"] === "newRecord" ? "New Record" : "Updated Record"}}',
 		defaults: { name: 'Workiom Trigger' },
 		inputs: [],
-		outputs: ['main'],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'workiomApi', required: true }],
 		webhooks: [
 			{
@@ -97,6 +100,7 @@ export class WorkiomTrigger implements INodeType {
 					'Copy the webhook URL above. In Workiom create an Automation → choose the trigger event → add a Webhook action → paste the URL, set Method to <b>POST</b>, Request Type to <b>JSON</b>, and Body to <code>{"record":"{{1. YourListName}}"}</code>',
 			},
 		],
+		usableAsTool: true,
 	};
 
 	methods = {
