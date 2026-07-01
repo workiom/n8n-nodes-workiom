@@ -471,9 +471,9 @@ export class Workiom implements INodeType {
 				const { baseUrl, token } = await getCredentials(this);
 				const listId = this.getCurrentNodeParameter('listId', { extractValue: true }) as string;
 				if (!listId) return [];
-				const fields = await fetchListFields(this, baseUrl, token, listId);
+				const fields = await fetchListFields(this, baseUrl, token, listId, true);
 				return fields
-					.filter((f) => !f.isDeleted && f.isVisible)
+					.filter((f) => !f.isDeleted && (f.isVisible !== false || f.isSystemField))
 					.sort((a, b) => (a.order as number) - (b.order as number))
 					.map((f) => ({ name: f.name as string, value: f.id as number }));
 			},
