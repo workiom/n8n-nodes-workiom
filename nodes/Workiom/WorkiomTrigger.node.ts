@@ -12,7 +12,7 @@ import {
 	IWebhookResponseData,
 } from 'n8n-workflow';
 
-import { FT, fetchListFields, fetchUserOptions, getCredentials, transformRecordFields } from './GenericFunctions';
+import { FT, fetchListFields, fetchUserOptions, getCredentials, renameRecordFields, transformRecordFields } from './GenericFunctions';
 
 const APP_MODES = [
 	{
@@ -97,6 +97,14 @@ export class WorkiomTrigger implements INodeType {
 				default: { mode: 'list', value: '' },
 				required: true,
 				modes: LIST_MODES,
+			},
+			{
+				displayName: 'Advanced Output',
+				name: 'advancedOutput',
+				type: 'boolean',
+				default: false,
+				description:
+					'Whether to return the raw record — field names with unprocessed values (select/user fields as objects/IDs, dates as raw strings) — instead of the friendly, type-formatted output',
 			},
 		],
 		usableAsTool: true,
@@ -218,9 +226,11 @@ export class WorkiomTrigger implements INodeType {
 		let record: IDataObject = body;
 		let fields: IDataObject[] = [];
 		let userOptions: INodePropertyOptions[] = [];
+		let advancedOutput = false;
 
 		try {
 			const listId = this.getNodeParameter('listId', '', { extractValue: true }) as string;
+			advancedOutput = this.getNodeParameter('advancedOutput', false) as boolean;
 			const { baseUrl, token } = await getCredentials(this);
 
 			// The native webhook payload is thin (often just `_id`) — refetch the
@@ -243,7 +253,8 @@ export class WorkiomTrigger implements INodeType {
 			}
 
 			fields = await fetchListFields(this, baseUrl, token, listId, true);
-			if (fields.some((f) => f.dataType === FT.User || f.dataType === FT.MultiUser)) {
+			// Advanced Output keeps raw values, so it never needs user resolution.
+			if (!advancedOutput && fields.some((f) => f.dataType === FT.User || f.dataType === FT.MultiUser)) {
 				userOptions = await fetchUserOptions(this, baseUrl, token);
 			}
 		} catch {
@@ -252,8 +263,12 @@ export class WorkiomTrigger implements INodeType {
 			// rather than crashing the webhook endpoint.
 		}
 
+		const json = advancedOutput
+			? renameRecordFields(record, fields)
+			: transformRecordFields(record, fields, userOptions);
+
 		return {
-			workflowData: [[{ json: transformRecordFields(record, fields, userOptions) }]],
+			workflowData: [[{ json }]],
 		};
 	}
 }

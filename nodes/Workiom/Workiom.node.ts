@@ -18,7 +18,7 @@ import {
 	ResourceMapperValue,
 } from 'n8n-workflow';
 
-import { FT, fetchListFields, fetchUserOptions, getCredentials, transformRecordFields } from './GenericFunctions';
+import { FT, fetchListFields, fetchUserOptions, getCredentials, renameRecordFields, transformRecordFields } from './GenericFunctions';
 
 const APP_MODES = [
 	{
@@ -360,6 +360,17 @@ export class Workiom implements INodeType {
 					},
 				],
 			},
+
+			// ── Record: get / getAll — output shape ───────────────────────────────
+			{
+				displayName: 'Advanced Output',
+				name: 'advancedOutput',
+				type: 'boolean',
+				displayOptions: { show: { resource: ['record'], operation: ['get', 'getAll'] } },
+				default: false,
+				description:
+					'Whether to return the raw record — field names with unprocessed values (select/user fields as objects/IDs, dates as raw strings) — instead of the friendly, type-formatted output',
+			},
 		],
 		usableAsTool: true,
 	};
@@ -682,12 +693,21 @@ export class Workiom implements INodeType {
 
 					if (result != null) {
 						const fields = await fetchListFields(this, baseUrl, token, listId, true);
-						const userOptions = fields.some((f) => f.dataType === FT.User || f.dataType === FT.MultiUser)
-							? await fetchUserOptions(this, baseUrl, token)
-							: [];
-						result = Array.isArray(result)
-							? result.map((r) => transformRecordFields(r as IDataObject, fields, userOptions))
-							: transformRecordFields(result as IDataObject, fields, userOptions);
+						// "Advanced Output" (get/getAll only) returns the raw record — field
+						// names with unprocessed values — skipping the type-aware transform.
+						const advancedOutput = this.getNodeParameter('advancedOutput', i, false) as boolean;
+						if (advancedOutput) {
+							result = Array.isArray(result)
+								? result.map((r) => renameRecordFields(r as IDataObject, fields))
+								: renameRecordFields(result as IDataObject, fields);
+						} else {
+							const userOptions = fields.some((f) => f.dataType === FT.User || f.dataType === FT.MultiUser)
+								? await fetchUserOptions(this, baseUrl, token)
+								: [];
+							result = Array.isArray(result)
+								? result.map((r) => transformRecordFields(r as IDataObject, fields, userOptions))
+								: transformRecordFields(result as IDataObject, fields, userOptions);
+						}
 					}
 				}
 

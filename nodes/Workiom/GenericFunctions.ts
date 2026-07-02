@@ -149,6 +149,21 @@ function transformFieldValue(dataType: number, value: unknown, userOptions: INod
 	}
 }
 
+// Map numeric field id → { field name, dataType }. On duplicate names, keep the
+// id suffixed so no field value is silently dropped when two fields share a name.
+function buildFieldLabelMap(fields: IDataObject[]): Map<string, { label: string; dataType: number }> {
+	const map = new Map<string, { label: string; dataType: number }>();
+	const seen = new Set<string>();
+	for (const f of fields) {
+		const id = String(f.id);
+		let label = getFieldName(f);
+		if (seen.has(label)) label = `${label} (${id})`;
+		seen.add(label);
+		map.set(id, { label, dataType: f.dataType as number });
+	}
+	return map;
+}
+
 // Rewrite a record's keys from numeric field ids to field names, applying a
 // per-dataType value transform (StaticSelect -> label, User -> name, etc).
 // `_id` is exposed as `id`; per-view metadata (`view-*`) is dropped; keys with
@@ -160,15 +175,7 @@ export function transformRecordFields(
 ): IDataObject {
 	if (row == null || typeof row !== 'object') return row;
 
-	const fieldById = new Map<string, { label: string; dataType: number }>();
-	const seenNames = new Set<string>();
-	for (const f of fields) {
-		const id = String(f.id);
-		let label = getFieldName(f);
-		if (seenNames.has(label)) label = `${label} (${id})`;
-		seenNames.add(label);
-		fieldById.set(id, { label, dataType: f.dataType as number });
-	}
+	const fieldById = buildFieldLabelMap(fields);
 
 	const out: IDataObject = {};
 	for (const [key, rawValue] of Object.entries(row)) {
@@ -183,6 +190,24 @@ export function transformRecordFields(
 			continue;
 		}
 		out[field.label] = transformFieldValue(field.dataType, rawValue, userOptions) as IDataObject[string];
+	}
+	return out;
+}
+
+// Rename a record's keys from numeric field ids to field names, leaving the
+// values as the raw API shape (no per-type formatting). `_id` -> `id`; `view-*`
+// metadata is dropped; unmapped keys pass through. This is the pre-type-aware
+// "Advanced Output" form — the shape the node emitted before value transforms.
+export function renameRecordFields(row: IDataObject, fields: IDataObject[]): IDataObject {
+	if (row == null || typeof row !== 'object') return row;
+
+	const fieldById = buildFieldLabelMap(fields);
+
+	const out: IDataObject = {};
+	for (const [key, rawValue] of Object.entries(row)) {
+		if (key.startsWith('view-')) continue;
+		const mapped = key === '_id' ? 'id' : (fieldById.get(key)?.label ?? key);
+		out[mapped] = rawValue;
 	}
 	return out;
 }
