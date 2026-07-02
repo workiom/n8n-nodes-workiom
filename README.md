@@ -40,7 +40,7 @@ In short: **Settings → Community Nodes → Install** → search for `@workiom/
 
 ### Workiom Trigger (webhook node)
 
-Fires when a record is **created** or **updated** in a Workiom list. Configure the matching Workiom Automation to call the webhook URL n8n provides.
+Fires when a record is **created** or **updated** in a Workiom list. Activating the workflow automatically registers the subscription with Workiom — no manual Automation setup required.
 
 ---
 
@@ -68,15 +68,8 @@ No known incompatibilities with earlier 1.x releases. Not tested against n8n 0.x
 ### Setting up the Workiom Trigger
 
 1. Add the **Workiom Trigger** node to your workflow, choose **New Record** or **Updated Record**, and select the App and List.
-2. Activate the workflow — n8n gives you a webhook URL.
-3. In Workiom, open the list → **Automations** → create a new automation:
-   - **Trigger:** Record Created _or_ Record Updated (match what you chose in n8n)
-   - **Action:** Webhook → paste the n8n URL, method `POST`, body type `JSON`
-   - **Body:**
-     ```
-     {"record": "{{1. YourListName}}"}
-     ```
-4. Save and activate. Records now fire the workflow automatically.
+2. Activate the workflow. n8n registers the subscription with Workiom automatically — no need to build a matching Automation by hand.
+3. Records now fire the workflow automatically. Deactivating the workflow removes the subscription again.
 
 ### Updating only specific fields
 

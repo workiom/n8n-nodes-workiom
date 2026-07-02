@@ -18,6 +18,8 @@ import {
 	ResourceMapperValue,
 } from 'n8n-workflow';
 
+import { FT, fetchListFields, fetchUserOptions, getCredentials, transformRecordFields } from './GenericFunctions';
+
 const APP_MODES = [
 	{
 		displayName: 'From List',
@@ -508,9 +510,7 @@ export class Workiom implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
-		const credentials = await this.getCredentials('workiomApi');
-		const baseUrl = ((credentials.baseUrl as string) || 'https://api.workiom.com').replace(/\/$/, '');
-		const token = credentials.accessToken as string;
+		const { baseUrl, token } = await getCredentials(this);
 
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
@@ -682,10 +682,12 @@ export class Workiom implements INodeType {
 
 					if (result != null) {
 						const fields = await fetchListFields(this, baseUrl, token, listId, true);
-						const idToName = buildFieldNameMap(fields);
+						const userOptions = fields.some((f) => f.dataType === FT.User || f.dataType === FT.MultiUser)
+							? await fetchUserOptions(this, baseUrl, token)
+							: [];
 						result = Array.isArray(result)
-							? result.map((r) => renameRecordKeys(r as IDataObject, idToName))
-							: renameRecordKeys(result as IDataObject, idToName);
+							? result.map((r) => transformRecordFields(r as IDataObject, fields, userOptions))
+							: transformRecordFields(result as IDataObject, fields, userOptions);
 					}
 				}
 
@@ -744,21 +746,7 @@ function normalizeIds(raw: unknown): string[] {
 	return arr.map(toId).filter((id) => id !== '');
 }
 
-async function getCredentials(context: ILoadOptionsFunctions) {
-	const credentials = await context.getCredentials('workiomApi');
-	return {
-		baseUrl: ((credentials.baseUrl as string) || 'https://api.workiom.com').replace(/\/$/, ''),
-		token: credentials.accessToken as string,
-	};
-}
 
-// Workiom FieldDataType enum (backend: Listure.Data.Shared.Field.FieldDataType)
-const FT = {
-	Text: 0, Number: 1, DateTime: 2, Boolean: 3, StaticSelect: 4, LinkList: 5,
-	User: 6, Website: 7, Email: 8, File: 9, PhoneNumber: 11, Count: 12,
-	Currency: 13, AutoNumber: 14, CheckList: 15, Status: 16, MultiStaticSelect: 17,
-	MultiUser: 18, ProgressBar: 19, Location: 20, Dependency: 21, Signature: 22,
-} as const;
 
 async function getRecordFields(context: ILoadOptionsFunctions, mode: 'create' | 'update'): Promise<ResourceMapperFields> {
 	const { baseUrl, token } = await getCredentials(context);
@@ -868,45 +856,7 @@ function resolveFieldType(
 	}
 }
 
-async function fetchListFields(
-	context: ILoadOptionsFunctions | IExecuteFunctions,
-	baseUrl: string,
-	token: string,
-	listId: string,
-	includeSystemFields = false,
-): Promise<IDataObject[]> {
-	const response = await context.helpers.httpRequest({
-		method: 'GET',
-		url: `${baseUrl}/api/services/app/Lists/Get`,
-		headers: { 'X-Api-Key': token },
-		json: true,
-		qs: { id: listId, expand: 'fields', ...(includeSystemFields ? { includeSystemFields: true } : {}) },
-	});
-	return ((response as IDataObject)?.result as IDataObject)?.fields as IDataObject[] ?? [];
-}
 
-async function fetchUserOptions(context: ILoadOptionsFunctions, baseUrl: string, token: string): Promise<INodePropertyOptions[]> {
-	try {
-		// CommonLookup/FindUsers only requires authentication (no invite-members
-		// permission) and returns NameValueDto { name: fullName, value: userId }.
-		const res = await context.helpers.httpRequest({
-			method: 'POST',
-			url: `${baseUrl}/api/services/app/CommonLookup/FindUsers`,
-			headers: { 'X-Api-Key': token },
-			json: true,
-			body: { maxResultCount: 1000, skipCount: 0, filter: '' },
-		});
-		const users: IDataObject[] = ((res as IDataObject)?.result as IDataObject)?.items as IDataObject[] ?? [];
-		return users.map((u) => ({
-			name: (u.name as string) || String(u.value),
-			value: String(u.value),
-		}));
-	} catch {
-		// On failure the field falls back to a text box — the backend still
-		// resolves a typed full name to a user on write.
-		return [];
-	}
-}
 
 async function fetchLinkOptions(
 	context: ILoadOptionsFunctions,
@@ -943,48 +893,6 @@ async function fetchLinkOptions(
 	}
 }
 
-const SYSTEM_FIELD_NAMES: Record<number, string> = {
-	1: 'Creator',
-	2: 'Creation Date',
-	3: 'Last Updater',
-	4: 'Last Modify Date',
-	5: 'Last Activity Date',
-};
-
-function getFieldName(field: IDataObject): string {
-	const sft = field.systemFieldType as number;
-	if (sft && SYSTEM_FIELD_NAMES[sft]) return SYSTEM_FIELD_NAMES[sft];
-	return (field.name as string) ?? String(field.id);
-}
-
-// Map numeric field id → field name. On duplicate names, keep the id suffixed
-// so no field value is silently dropped.
-function buildFieldNameMap(fields: IDataObject[]): Record<string, string> {
-	const map: Record<string, string> = {};
-	const seen = new Set<string>();
-	for (const f of fields) {
-		const id = String(f.id);
-		let name = getFieldName(f);
-		if (seen.has(name)) name = `${name} (${id})`;
-		seen.add(name);
-		map[id] = name;
-	}
-	return map;
-}
-
-// Rewrite a record's keys from numeric field ids to field names.
-// `_id` is exposed as `id`; other unmapped keys (system metadata) pass through unchanged.
-function renameRecordKeys(record: IDataObject, idToName: Record<string, string>): IDataObject {
-	if (record == null || typeof record !== 'object') return record;
-	const out: IDataObject = {};
-	for (const [key, value] of Object.entries(record)) {
-		// Drop per-view ordering metadata (e.g. view-630460) — not record data.
-		if (key.startsWith('view-')) continue;
-		const mapped = key === '_id' ? 'id' : (idToName[key] ?? key);
-		out[mapped] = value;
-	}
-	return out;
-}
 
 function extractMapperBody(mapper: ResourceMapperValue): IDataObject {
 	const body: IDataObject = {};
