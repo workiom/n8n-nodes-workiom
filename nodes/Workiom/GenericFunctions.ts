@@ -12,7 +12,7 @@ export type WorkiomContext = ILoadOptionsFunctions | IExecuteFunctions | IHookFu
 // Workiom FieldDataType enum (backend: Listure.Data.Shared.Field.FieldDataType)
 export const FT = {
 	Text: 0, Number: 1, DateTime: 2, Boolean: 3, StaticSelect: 4, LinkList: 5,
-	User: 6, Website: 7, Email: 8, File: 9, PhoneNumber: 11, Count: 12,
+	User: 6, Website: 7, Email: 8, File: 9, Rollup: 10, PhoneNumber: 11, Count: 12,
 	Currency: 13, AutoNumber: 14, CheckList: 15, Status: 16, MultiStaticSelect: 17,
 	MultiUser: 18, ProgressBar: 19, Location: 20, Dependency: 21, Signature: 22,
 } as const;
@@ -122,7 +122,8 @@ function transformFieldValue(dataType: number, value: unknown, userOptions: INod
 		case FT.Number:
 		case FT.Count:
 		case FT.Currency:
-		case FT.ProgressBar: {
+		case FT.ProgressBar:
+		case FT.Rollup: {
 			const n = parseFloat(value as string);
 			return value !== null && value !== undefined && value !== '' && !isNaN(n) ? n : '';
 		}
@@ -132,9 +133,11 @@ function transformFieldValue(dataType: number, value: unknown, userOptions: INod
 			return !!value;
 		case FT.StaticSelect:
 		case FT.Status:
+		case FT.Location:
 			return (value as IDataObject)?.label ?? '';
 		case FT.MultiStaticSelect:
 		case FT.LinkList:
+		case FT.Dependency:
 			return Array.isArray(value) ? value.map((item) => (item as IDataObject)?.label ?? '') : [];
 		case FT.User:
 			return resolveUserName(value, userOptions);
@@ -143,7 +146,8 @@ function transformFieldValue(dataType: number, value: unknown, userOptions: INod
 		case FT.CheckList:
 			return parseCheckList(value);
 		case FT.File:
-			return Array.isArray(value) ? value : [];
+		case FT.Signature:
+			return Array.isArray(value) ? value : value ? [value] : [];
 		default:
 			return value ?? '';
 	}
