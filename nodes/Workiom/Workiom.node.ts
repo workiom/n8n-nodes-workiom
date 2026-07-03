@@ -187,12 +187,15 @@ export class Workiom implements INodeType {
 				displayOptions: { show: { resource: ['record'], operation: ['create'] } },
 				default: { mappingMode: 'defineBelow', value: null },
 				typeOptions: {
-					loadOptionsDependsOn: ['listId'],
+					loadOptionsDependsOn: ['listId.value'],
 					resourceMapper: {
 						resourceMapperMethod: 'getFieldsForCreate',
 						mode: 'add',
 						fieldWords: { singular: 'field', plural: 'fields' },
-						addAllFields: true,
+						// Start with only required fields shown; the user adds optional
+						// fields via "Add field" (required fields stay visible even with
+						// addAllFields=false).
+						addAllFields: false,
 						supportAutoMap: false,
 						noFieldsError: 'No editable fields found. Please select a list first.',
 					},
@@ -208,7 +211,7 @@ export class Workiom implements INodeType {
 				displayOptions: { show: { resource: ['record'], operation: ['update'] } },
 				default: { mappingMode: 'defineBelow', value: null },
 				typeOptions: {
-					loadOptionsDependsOn: ['listId', 'recordId'],
+					loadOptionsDependsOn: ['listId.value', 'recordId'],
 					resourceMapper: {
 						resourceMapperMethod: 'getFieldsForUpdate',
 						mode: 'add',
@@ -247,7 +250,7 @@ export class Workiom implements INodeType {
 				type: 'multiOptions',
 				typeOptions: {
 					loadOptionsMethod: 'getListFieldIds',
-					loadOptionsDependsOn: ['listId'],
+					loadOptionsDependsOn: ['listId.value'],
 				},
 				displayOptions: { show: { resource: ['record'], operation: ['getAll'] } },
 				default: [],
@@ -305,7 +308,7 @@ export class Workiom implements INodeType {
 								type: 'options',
 								typeOptions: {
 									loadOptionsMethod: 'getListFieldIds',
-									loadOptionsDependsOn: ['listId'],
+									loadOptionsDependsOn: ['listId.value'],
 								},
 								default: '',
 								description: 'Field to filter by. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',

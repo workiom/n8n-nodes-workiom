@@ -99,6 +99,10 @@ The **Update Record** operation starts with an empty field form. Click **Add fie
 
 ## Version history
 
+### 0.5.0
+- Create Record, Update Record, and Get Many field/filter dropdowns now refresh immediately when you change the List, instead of requiring the node to be closed and reopened.
+- Create Record starts with only required fields shown; add optional fields via "Add field" (matches Update Record).
+
 ### 0.4.1
 - Update Record field form starts empty — add only the fields you want to patch.
 - Fields load as soon as the list is selected.
