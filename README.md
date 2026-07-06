@@ -99,6 +99,9 @@ The **Update Record** operation starts with an empty field form. Click **Add fie
 
 ## Version history
 
+### 0.5.1
+- HTTP errors from the Workiom API now show the actual status code and error body in n8n, instead of a generic error.
+
 ### 0.5.0
 - Create Record, Update Record, and Get Many field/filter dropdowns now refresh immediately when you change the List, instead of requiring the node to be closed and reopened.
 - Create Record starts with only required fields shown; add optional fields via "Add field" (matches Update Record).

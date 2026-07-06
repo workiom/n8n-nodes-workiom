@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.1] - 2026-07-06
+
+### Fixed
+
+- HTTP errors from the Workiom API in record operations now surface as `NodeApiError`, preserving the status code and API error body in n8n's error UI (previously wrapped as a generic `NodeOperationError`). Matches the pattern already used by the webhook trigger.
+
 ## [0.5.0] - 2026-07-03
 
 ### Fixed

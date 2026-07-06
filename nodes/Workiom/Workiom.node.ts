@@ -12,8 +12,9 @@ import {
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
+	JsonObject,
+	NodeApiError,
 	NodeConnectionTypes,
-	NodeOperationError,
 	ResourceMapperFields,
 	ResourceMapperValue,
 } from 'n8n-workflow';
@@ -723,7 +724,7 @@ export class Workiom implements INodeType {
 					returnData.push({ json: { error: (error as Error).message }, pairedItem: i });
 					continue;
 				}
-				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
+				throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: i });
 			}
 		}
 
